@@ -69,6 +69,11 @@ WebVideoServer::WebVideoServer(rclcpp::Node::SharedPtr &nh, rclcpp::Node::Shared
   } else {
     address_ = "0.0.0.0";
   }
+  if (const char* env_p = std::getenv("HOST_VIDEO")) {
+    address_ =std::getenv("HOST_VIDEO");
+  } 
+
+
 
   int server_threads;
   if (private_nh->get_parameter("server_threads", parameter)) {
