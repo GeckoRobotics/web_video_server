@@ -208,7 +208,7 @@ bool WebVideoServer::handle_stream(const async_web_server_cpp::HttpRequest &requ
       if (!did_find_compressed_topic)
       {
         RCLCPP_WARN(nh_->get_logger(), "Could not find compressed image topic for %s, falling back to mjpeg", topic.c_str());
-        type = "mjpeg";
+        type = "vp8";
       }
     }
     boost::shared_ptr<ImageStreamer> streamer = stream_types_[type]->create_streamer(request, connection, nh_);
