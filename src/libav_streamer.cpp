@@ -1,5 +1,6 @@
 #include "web_video_server/libav_streamer.h"
 #include "async_web_server_cpp/http_reply.hpp"
+#include <memory>
 
 /*https://stackoverflow.com/questions/46884682/error-in-building-opencv-with-ffmpeg*/
 #define AV_CODEC_FLAG_GLOBAL_HEADER (1 << 22)
@@ -305,19 +306,21 @@ void LibavStreamer::sendImage(const cv::Mat &img, const rclcpp::Time &time)
 #endif
 
   // Encode the frame
-  AVPacket pkt;
+  AVPacket * raw_pkt = av_packet_alloc();
+  auto av_packet_deleter = [](AVPacket * pkt) {av_packet_free(&pkt);};
+  using AVPacketUniquePtr = std::unique_ptr<AVPacket, decltype(av_packet_deleter)>;
+  AVPacketUniquePtr pkt(raw_pkt, av_packet_deleter);
   int got_packet;
-  av_init_packet(&pkt);
 
 #if (LIBAVCODEC_VERSION_MAJOR < 54)
   int buf_size = 6 * output_width_ * output_height_;
-  pkt.data = (uint8_t*)av_malloc(buf_size);
-  pkt.size = avcodec_encode_video(codec_context_, pkt.data, buf_size, frame_);
-  got_packet = pkt.size > 0;
+  pkt->data = (uint8_t*)av_malloc(buf_size);
+  pkt->size = avcodec_encode_video(codec_context_, pkt->data, buf_size, frame_);
+  got_packet = pkt->size > 0;
 #elif (LIBAVCODEC_VERSION_MAJOR < 57)
-  pkt.data = NULL; // packet data will be allocated by the encoder
-  pkt.size = 0;
-  if (avcodec_encode_video2(codec_context_, &pkt, frame_, &got_packet) < 0)
+  pkt->data = NULL; // packet data will be allocated by the encoder
+  pkt->size = 0;
+  if (avcodec_encode_video2(codec_context_, pkt.get(), frame_, &got_packet) < 0)
   {
      throw std::runtime_error("Error encoding video frame");
   }
@@ -335,8 +338,8 @@ void LibavStreamer::sendImage(const cv::Mat &img, const rclcpp::Time &time)
   {
     throw std::runtime_error("Error encoding video frame");
   }
-  ret = avcodec_receive_packet(codec_context_, &pkt);
-  got_packet = pkt.size > 0;
+  ret = avcodec_receive_packet(codec_context_, pkt.get());
+  got_packet = pkt->size > 0;
   if (ret == AVERROR_EOF)
   {
     RCLCPP_DEBUG(nh_->get_logger(), "avcodec_recieve_packet() encoder flushed");
@@ -355,17 +358,17 @@ void LibavStreamer::sendImage(const cv::Mat &img, const rclcpp::Time &time)
 
     double seconds = (time - first_image_timestamp_).seconds();
     // Encode video at 1/0.95 to minimize delay
-    pkt.pts = (int64_t)(seconds / av_q2d(video_stream_->time_base) * 0.95);
-    if (pkt.pts <= 0)
-      pkt.pts = 1;
-    pkt.dts = AV_NOPTS_VALUE;
+    pkt->pts = (int64_t)(seconds / av_q2d(video_stream_->time_base) * 0.95);
+    if (pkt->pts <= 0)
+      pkt->pts = 1;
+    pkt->dts = AV_NOPTS_VALUE;
 
-    if (pkt.flags&AV_PKT_FLAG_KEY)
-      pkt.flags |= AV_PKT_FLAG_KEY;
+    if (pkt->flags&AV_PKT_FLAG_KEY)
+      pkt->flags |= AV_PKT_FLAG_KEY;
 
-    pkt.stream_index = video_stream_->index;
+    pkt->stream_index = video_stream_->index;
 
-    if (av_write_frame(format_context_, &pkt))
+    if (av_write_frame(format_context_, pkt.get()))
     {
       throw std::runtime_error("Error when writing frame");
     }
@@ -375,13 +378,13 @@ void LibavStreamer::sendImage(const cv::Mat &img, const rclcpp::Time &time)
     encoded_frame.clear();
   }
 #if LIBAVCODEC_VERSION_INT < 54
-  av_free(pkt.data);
+  av_free(pkt->data);
 #endif
 
 #if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(55,28,1)
-  av_free_packet(&pkt);
+  av_free_packet(pkt.get());
 #else
-  av_packet_unref(&pkt);
+  av_packet_unref(pkt.get());
 #endif
 
   connection_->write_and_clear(encoded_frame);
