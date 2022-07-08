@@ -16,9 +16,40 @@ ImageStreamer::~ImageStreamer()
 {
 }
 
+rclcpp::QoS ImageStreamer::getQoSForTopic_(std::string & topic, size_t history_depth)
+{
+  // Initialize QoS with the requested depth
+  rclcpp::QoS qos{history_depth};
+
+  // Lookup publisher info
+  std::vector<rclcpp::TopicEndpointInfo> infos = nh_->get_publishers_info_by_topic(topic);
+
+  // Check if any publishers are using transient local durability
+  bool transient_local = std::any_of(
+    infos.cbegin(), infos.cend(), [](const rclcpp::TopicEndpointInfo & pub) {
+      return pub.qos_profile().durability() == rclcpp::DurabilityPolicy::TransientLocal;
+    }
+  );
+  if (transient_local) {
+    qos.transient_local();
+  }
+
+  // Check if any publishers are using best effort reliability
+  bool best_effort = std::any_of(
+    infos.cbegin(), infos.cend(), [](const rclcpp::TopicEndpointInfo & pub) {
+      return pub.qos_profile().reliability() == rclcpp::ReliabilityPolicy::BestEffort;
+    }
+  );
+  if (best_effort) {
+    qos.best_effort();
+  }
+
+  return qos;
+}
+
 ImageTransportImageStreamer::ImageTransportImageStreamer(const async_web_server_cpp::HttpRequest &request,
                              async_web_server_cpp::HttpConnectionPtr connection, rclcpp::Node::SharedPtr nh) :
-  ImageStreamer(request, connection, nh), it_(nh), initialized_(false)
+  ImageStreamer(request, connection, nh), initialized_(false)
 {
   output_width_ = request.get_query_param_value_or_default<int>("width", -1);
   output_height_ = request.get_query_param_value_or_default<int>("height", -1);
@@ -32,6 +63,8 @@ ImageTransportImageStreamer::~ImageTransportImageStreamer()
 
 void ImageTransportImageStreamer::start()
 {
+  using namespace std::placeholders;
+
   image_transport::TransportHints hints(nh_.get(), default_transport_);
   auto tnat = nh_->get_topic_names_and_types();
   inactive_ = true;
@@ -46,7 +79,11 @@ void ImageTransportImageStreamer::start()
       break;
     }
   }
-  image_sub_ = it_.subscribe(topic_, 1, &ImageTransportImageStreamer::imageCallback, this, &hints);
+
+  rclcpp::QoS qos = getQoSForTopic_(topic_, 1);
+  image_sub_ = image_transport::create_subscription(
+    nh_.get(), topic_, std::bind(&ImageTransportImageStreamer::imageCallback, this, _1),
+    hints.getTransport(), qos.get_rmw_qos_profile());
 }
 
 void ImageTransportImageStreamer::initialize(const cv::Mat &)

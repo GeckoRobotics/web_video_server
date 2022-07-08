@@ -38,6 +38,11 @@ public:
   }
   ;
 protected:
+  /**
+   * Lookup the QoS settings used by publishers of a topic.
+   */
+  rclcpp::QoS getQoSForTopic_(std::string & topic, size_t history_depth);
+
   async_web_server_cpp::HttpConnectionPtr connection_;
   async_web_server_cpp::HttpRequest request_;
   rclcpp::Node::SharedPtr nh_;
@@ -72,7 +77,6 @@ protected:
   boost::mutex send_mutex_;
 
 private:
-  image_transport::ImageTransport it_;
   bool initialized_;
 
   void imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr &msg);

@@ -17,9 +17,13 @@ RosCompressedStreamer::~RosCompressedStreamer()
 }
 
 void RosCompressedStreamer::start() {
+  using namespace std::placeholders;
+
   std::string compressed_topic = topic_ + "/compressed";
+
+  rclcpp::QoS qos = getQoSForTopic_(compressed_topic, 1);
   image_sub_ = nh_->create_subscription<sensor_msgs::msg::CompressedImage>(
-    compressed_topic, 1, std::bind(&RosCompressedStreamer::imageCallback, this, std::placeholders::_1));
+    compressed_topic, qos, std::bind(&RosCompressedStreamer::imageCallback, this, _1));
 }
 
 void RosCompressedStreamer::restreamFrame(double max_age)
