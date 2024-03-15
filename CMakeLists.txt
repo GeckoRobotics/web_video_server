@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(web_video_server)
+project(web_video_server VERSION 1.1.0)
 
 find_package(ament_cmake_ros REQUIRED)
 
@@ -81,3 +81,7 @@ install(DIRECTORY include/${PROJECT_NAME}/
 )
 
 ament_package()
+
+## Package as deb file
+set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/CPackOptions.cmake")
+include(CPack)
